@@ -145,15 +145,17 @@ class replay_buffer:
         return random.sample(self.buffer, batch_size)
 
 class DQN(object):
-    def __init__(self, env):
+    def __init__(self, env, learning_rate=LR, gamma=GAMMA, target_update_interval=TARGET_UPDATE_INTERVAL, eps_start=EPSILON_START, eps_end=EPSILON_END, eps_decay_length=EPSILON_DECAY):
         self.action_shape = env.action_space.n
         self.obs_shape = env.observation_space.shape
         self.eval_net, self.target_net = QNetwork(self.action_shape, self.obs_shape).to(device), QNetwork(self.action_shape, self.obs_shape).to(device)
         self.learn_step_counter = 0                                     # for target updating
-        self.optimizer = torch.optim.Adam(self.eval_net.parameters(), lr=LR)
+        self.optimizer = torch.optim.Adam(self.eval_net.parameters(), lr=learning_rate)
         self.loss_func = nn.MSELoss()
-        self.epsilon_scheduler = EpsilonScheduler(EPSILON_START, EPSILON_END, EPSILON_DECAY)
+        self.epsilon_scheduler = EpsilonScheduler(eps_start, eps_end, eps_decay_length)
         self.updates = 0
+        self.gamma = gamma
+        self.target_update_interval = target_update_interval
 
     def choose_action(self, x):
         # x = Variable(torch.unsqueeze(torch.FloatTensor(x), 0)).to(device)
@@ -205,7 +207,7 @@ class DQN(object):
         Q_s_prime_a_prime = (Q_s_prime_a_prime-Q_s_prime_a_prime.mean())/ (Q_s_prime_a_prime.std() + 1e-5)  # normalization
         
         # Compute the target
-        target = rewards + GAMMA * Q_s_prime_a_prime
+        target = rewards + self.gamma * Q_s_prime_a_prime
 
         # Update with loss
         # loss = self.loss_func(target.detach(), Q_s_a)
@@ -216,13 +218,13 @@ class DQN(object):
         self.optimizer.step()
 
         self.updates += 1
-        if self.updates % TARGET_UPDATE_INTERVAL == 0:
+        if self.updates % self.target_update_interval == 0:
             self.update_target()
 
         return loss.item()
 
-    def save_model(self, model_path=None):
-        torch.save(self.eval_net.state_dict(), 'model/dqn')
+    def save_model(self, model_path='model/dqn'):
+        torch.save(self.eval_net.state_dict(), model_path)
 
     def update_target(self, ):
         """
@@ -230,18 +232,18 @@ class DQN(object):
         """
         self.target_net.load_state_dict(self.eval_net.state_dict())
     
-def rollout(env, model):
+def train(env, model, episodes=MAX_EPI, steps=MAX_STEP, save_interval=SAVE_INTERVAL, replay_start_size=REPLAY_START_SIZE, batch_size=BATCH_SIZE):
     r_buffer = replay_buffer(REPLAY_BUFFER_SIZE)
     log = []
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M")
     # print('\nCollecting experience...')
     total_step = 0
-    for epi in range(MAX_EPI):
+    for epi in range(episodes):
         s, _ =env.reset()
         epi_r = 0
         epi_loss = 0
         actions = []
-        for step in range(MAX_STEP):
+        for step in range(steps):
             # env.render()
             total_step += 1
             a = model.choose_action(s)
@@ -251,8 +253,8 @@ def rollout(env, model):
             r_buffer.add([s,s_,[a],[r],[done]])
             model.epsilon_scheduler.step(total_step)
             epi_r += r
-            if total_step > REPLAY_START_SIZE and len(r_buffer.buffer) >= BATCH_SIZE:
-                sample = r_buffer.sample(BATCH_SIZE)
+            if total_step > replay_start_size and len(r_buffer.buffer) >= batch_size:
+                sample = r_buffer.sample(batch_size)
                 loss = model.learn(sample)
                 epi_loss += loss
             if done:
@@ -260,7 +262,7 @@ def rollout(env, model):
             s = s_
         print('Ep: ', epi, '| Ep_r: ', epi_r, '| Steps: ', step, f'| Ep_Loss: {epi_loss:.4f}', np.array(env.actions).flatten().round(3))
         log.append([epi, epi_r, step])
-        # if epi % SAVE_INTERVAL == 0:
+        # if epi % save_interval == 0:
             # model.save_model()
             # np.save('log/'+timestamp, log)
     return model
