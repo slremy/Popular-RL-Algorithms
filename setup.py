@@ -3,7 +3,7 @@
 
 from setuptools import setup, find_packages
 
-setup(name='Popular-RL-Algorithms',
+setup(name='Popular_RL_Algorithms',
       version='0.1',
       description='PyTorch implementation of Soft Actor-Critic (SAC), Twin Delayed DDPG (TD3), Actor-Critic (AC/A2C), Proximal Policy Optimization (PPO), QT-Opt, PointNet..',
       author='quantumiracle',
