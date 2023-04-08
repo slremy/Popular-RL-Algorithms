@@ -29,13 +29,13 @@ else:
     device = torch.device("cpu")
 print(device)
 
+def parse_args():
+    parser = argparse.ArgumentParser(description='Train or test neural net motor controller.')
+    parser.add_argument('--train', dest='train', action='store_true', default=False)
+    parser.add_argument('--test', dest='test', action='store_true', default=False)
 
-parser = argparse.ArgumentParser(description='Train or test neural net motor controller.')
-parser.add_argument('--train', dest='train', action='store_true', default=False)
-parser.add_argument('--test', dest='test', action='store_true', default=False)
-
-args = parser.parse_args()
-
+    args = parser.parse_args()
+    return args
 
 class ReplayBuffer:
     def __init__(self, capacity):
@@ -280,6 +280,7 @@ target_entropy = -1.*action_dim
 sac_trainer=SAC_Trainer(replay_buffer, hidden_dim=hidden_dim)
 
 if __name__ == '__main__':
+    args = parse_args()
     if args.train:
         # training loop
         for eps in range(max_episodes):
