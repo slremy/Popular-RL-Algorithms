@@ -219,8 +219,8 @@ class PolicyNetwork(nn.Module):
 
 
 class TD3_Trainer():
-    def __init__(self, replay_buffer, hidden_dim, action_range, policy_target_update_interval=1):
-        self.replay_buffer = replay_buffer
+    def __init__(self, replay_buffer_size, hidden_dim, action_range, policy_target_update_interval=1):
+        self.replay_buffer = ReplayBuffer(replay_buffer_size)
 
 
         self.q_net1 = QNetwork(state_dim, action_dim, hidden_dim).to(device)
@@ -350,8 +350,6 @@ else:
     action_range=1.
 
 replay_buffer_size = 5e5
-replay_buffer = ReplayBuffer(replay_buffer_size)
-
 
 # hyper-parameters for RL training
 max_episodes  = 1000
@@ -369,7 +367,7 @@ reward_scale = 1.
 rewards     = []
 model_path = './model/td3'
 
-td3_trainer=TD3_Trainer(replay_buffer, hidden_dim=hidden_dim, policy_target_update_interval=policy_target_update_interval, action_range=action_range )
+td3_trainer=TD3_Trainer(replay_buffer_size, hidden_dim=hidden_dim, policy_target_update_interval=policy_target_update_interval, action_range=action_range )
 
 if __name__ == '__main__':
     args = parse_args()
@@ -393,13 +391,13 @@ if __name__ == '__main__':
                     next_state, reward, done, _ = env.step(action) 
                     # env.render()
 
-                replay_buffer.push(state, action, reward, next_state, done)
+                td3_trainer.replay_buffer.push(state, action, reward, next_state, done)
                 
                 state = next_state
                 episode_reward += reward
                 frame_idx += 1
                 
-                if len(replay_buffer) > batch_size:
+                if len(td3_trainer.replay_buffer) > batch_size:
                     for i in range(update_itr):
                         _=td3_trainer.update(batch_size, deterministic=DETERMINISTIC, eval_noise_scale=eval_noise_scale, reward_scale=reward_scale)
                 
@@ -407,7 +405,6 @@ if __name__ == '__main__':
                     break
               
             if eps % 20 == 0 and eps>0:
-                plot(rewards)
                 np.save('rewards_td3', rewards)
                 td3_trainer.save_model(model_path)
 
