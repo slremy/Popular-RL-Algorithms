@@ -137,6 +137,7 @@ class SAC():
         state_dim  = env.observation_space.shape[0]
         action_dim = env.action_space.n  # discrete
         self.target_entropy = -1.*action_dim
+        # target_entropy = 0.98 * -np.log(1 / action_dim)
 
         self.soft_q_net1 = SoftQNetwork(state_dim, action_dim, hidden_dim).to(device)
         self.soft_q_net2 = SoftQNetwork(state_dim, action_dim, hidden_dim).to(device)
@@ -253,7 +254,7 @@ def plot(rewards):
     # plt.show()
 
 
-def train(env, model, episodes=10000, steps=100, deterministic=False, batch_size=256, update_itr=1, auto_entropy=True, model_path='./model/sac_discrete_v2'):
+def train(env, model, episodes=10000, steps=100, deterministic=False, batch_size=256, update_itr=1, frame_idx=0, auto_entropy=True, model_path='./model/sac_discrete_v2'):
     rewards = []
     # training loop
     for eps in range(episodes):
@@ -308,12 +309,11 @@ if __name__ == '__main__':
     hidden_dim = 64
     rewards     = []
     model_path = './model/sac_discrete_v2'
-    # target_entropy = 0.98 * -np.log(1 / action_dim)
 
     model=SAC(env, hidden_dim=hidden_dim, replay_buffer_size=replay_buffer_size)
 
     if args.train:
-        model = train(env, model, episodes=10000, steps=100, deterministic=False, auto_entropy=True, model_path='./model/sac_discrete_v2')
+        model = train(env, model, episodes=max_episodes, steps=max_steps, deterministic=False, auto_entropy=True, model_path='./model/sac_discrete_v2')
         
 
     if args.test:
