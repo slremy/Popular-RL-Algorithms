@@ -17,7 +17,6 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 from torch.distributions import Categorical
-from IPython.display import clear_output
 import matplotlib.pyplot as plt
 import argparse
 
@@ -247,7 +246,7 @@ class SAC_Trainer():
 
 
 def plot(rewards):
-    clear_output(True)
+    plt.clf()
     plt.figure(figsize=(20,5))
     plt.plot(rewards)
     plt.savefig('sac_v2.png')
@@ -279,12 +278,12 @@ if __name__ == '__main__':
     if args.train:
         # training loop
         for eps in range(max_episodes):
-            state =  env.reset()
+            state, _ =  env.reset()
             episode_reward = 0
             
             for step in range(max_steps):
                 action = sac_trainer.policy_net.get_action(state, deterministic = DETERMINISTIC)
-                next_state, reward, done, _ = env.step(action)
+                next_state, reward, done, truncated, _ = env.step(action)
                 # env.render()       
                     
                 sac_trainer.replay_buffer.push(state, action, reward, next_state, done)
