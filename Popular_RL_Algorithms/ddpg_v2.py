@@ -186,7 +186,7 @@ if __name__ == '__main__':
         for i_episode in range (max_episodes):
             q_loss_list=[]
             policy_loss_list=[]
-            state = env.reset()
+            state, _ = env.reset()
             episode_reward = 0
 
             for step in range(max_steps):
@@ -194,7 +194,7 @@ if __name__ == '__main__':
                     action = alg.policy_net.get_action(state)
                 else:
                     action = alg.policy_net.sample_action()
-                next_state, reward, done, _ = env.step(action)
+                next_state, reward, done, truncated _ = env.step(action)
                 env.render()
                 replay_buffer.push(state, action, reward, next_state, done)
                 
@@ -226,12 +226,12 @@ if __name__ == '__main__':
         for i_episode in range (test_episodes):
             q_loss_list=[]
             policy_loss_list=[]
-            state = env.reset()
+            state, _ = env.reset()
             episode_reward = 0
 
             for step in range(max_steps):
                 action = alg.policy_net.get_action(state, noise_scale=0.0)  # no noise for testing
-                next_state, reward, done, _ = env.step(action)
+                next_state, reward, done, truncated, _ = env.step(action)
                 
                 state = next_state
                 episode_reward += reward
