@@ -37,11 +37,13 @@ else:
     device = torch.device("cpu")
 print(device)
 
-parser = argparse.ArgumentParser(description='Train or test neural net motor controller.')
-parser.add_argument('--train', dest='train', action='store_true', default=False)
-parser.add_argument('--test', dest='test', action='store_true', default=False)
+def parse_args():
+    parser = argparse.ArgumentParser(description='Train or test neural net motor controller.')
+    parser.add_argument('--train', dest='train', action='store_true', default=False)
+    parser.add_argument('--test', dest='test', action='store_true', default=False)
 
-args = parser.parse_args()
+    args = parser.parse_args()
+    return args
 
 class DDPG():
     def __init__(self, replay_buffer, state_space, action_space, hidden_dim):
@@ -151,6 +153,7 @@ class NormalizedActions(gym.ActionWrapper): # gym env wrapper
 
 
 if __name__ == '__main__':
+    args = parse_args()
     NUM_JOINTS=2
     LINK_LENGTH=[200, 140]
     INI_JOING_ANGLES=[0.1, 0.1]
