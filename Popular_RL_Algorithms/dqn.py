@@ -271,4 +271,4 @@ if __name__ == '__main__':
     env = gym.make('CartPole-v1')
     print(env.observation_space, env.action_space)
     model = DQN(env)
-    rollout(env, model)
+    train(env, model)
