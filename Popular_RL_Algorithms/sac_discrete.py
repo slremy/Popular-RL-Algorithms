@@ -130,7 +130,7 @@ class PolicyNetwork(nn.Module):
         return action
 
 
-class SAC_Trainer():
+class SAC():
     def __init__(self, env, hidden_dim, replay_buffer_size=1e6, soft_q_lr=3e-4, policy_lr=3e-4, alpha_lr=3e-4):
         self.replay_buffer = ReplayBuffer(replay_buffer_size)
 
@@ -253,6 +253,42 @@ def plot(rewards):
     # plt.show()
 
 
+def train(env, model, episodes=10000, steps=100, deterministic=False, batch_size=256, update_itr=1, auto_entropy=True, model_path='./model/sac_discrete_v2'):
+    rewards = []
+    # training loop
+    for eps in range(episodes):
+        state, _ =  env.reset()
+        episode_reward = 0
+        
+        for step in range(steps):
+            action = model.policy_net.get_action(state, deterministic=deterministic)
+            next_state, reward, done, truncated, _ = env.step(action)
+            # env.render()       
+                
+            model.replay_buffer.push(state, action, reward, next_state, done)
+            
+            state = next_state
+            episode_reward += reward
+            frame_idx += 1
+            
+            
+            if len(model.replay_buffer) > batch_size:
+                for i in range(update_itr):
+                    _=model.update(batch_size, reward_scale=1., auto_entropy=auto_entropy)
+
+            if done:
+                break
+
+        if eps % 20 == 0 and eps>0: # plot and model saving interval
+            plot(rewards)
+            np.save('rewards', rewards)
+            model.save_model(model_path)
+        print('Episode: ', eps, '| Episode Reward: ', episode_reward, '| Episode Length: ', step)
+        rewards.append(episode_reward)
+    model.save_model(model_path)
+
+    return model
+
 if __name__ == '__main__':
     args = parse_args()
 
@@ -274,54 +310,27 @@ if __name__ == '__main__':
     model_path = './model/sac_discrete_v2'
     # target_entropy = 0.98 * -np.log(1 / action_dim)
 
-    sac_trainer=SAC_Trainer(env, hidden_dim=hidden_dim, replay_buffer_size=replay_buffer_size)
+    model=SAC(env, hidden_dim=hidden_dim, replay_buffer_size=replay_buffer_size)
 
     if args.train:
-        # training loop
-        for eps in range(max_episodes):
-            state, _ =  env.reset()
-            episode_reward = 0
-            
-            for step in range(max_steps):
-                action = sac_trainer.policy_net.get_action(state, deterministic = DETERMINISTIC)
-                next_state, reward, done, truncated, _ = env.step(action)
-                # env.render()       
-                    
-                sac_trainer.replay_buffer.push(state, action, reward, next_state, done)
-                
-                state = next_state
-                episode_reward += reward
-                frame_idx += 1
-                
-                
-                if len(sac_trainer.replay_buffer) > batch_size:
-                    for i in range(update_itr):
-                        _=sac_trainer.update(batch_size, reward_scale=1., auto_entropy=AUTO_ENTROPY)
-
-                if done:
-                    break
-
-            if eps % 20 == 0 and eps>0: # plot and model saving interval
-                plot(rewards)
-                np.save('rewards', rewards)
-                sac_trainer.save_model(model_path)
-            print('Episode: ', eps, '| Episode Reward: ', episode_reward, '| Episode Length: ', step)
-            rewards.append(episode_reward)
-        sac_trainer.save_model(model_path)
+        model = train(env, model, episodes=10000, steps=100, deterministic=False, auto_entropy=True, model_path='./model/sac_discrete_v2')
+        
 
     if args.test:
-        sac_trainer.load_model(model_path)
+        model.load_model(model_path)
         for eps in range(10):
-            state =  env.reset()
+            state, _ =  env.reset()
             episode_reward = 0
 
             for step in range(max_steps):
-                action = sac_trainer.policy_net.get_action(state, deterministic = DETERMINISTIC)
-                next_state, reward, done, _ = env.step(action)
+                action = model.policy_net.get_action(state, deterministic = DETERMINISTIC)
+                next_state, reward, done, truncated, _ = env.step(action)
                 env.render()   
 
 
                 episode_reward += reward
                 state=next_state
 
+                if done:
+                    break
             print('Episode: ', eps, '| Episode Reward: ', episode_reward)
