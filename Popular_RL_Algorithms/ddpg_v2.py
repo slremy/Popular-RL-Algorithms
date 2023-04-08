@@ -160,7 +160,7 @@ if __name__ == '__main__':
     # SCREEN_SHOT=False
     ENV = ['Pendulum'][0]
     if ENV == 'Pendulum':
-        env = NormalizedActions(gym.make("Pendulum-v0"))
+        env = NormalizedActions(gym.make("Pendulum-v1"))
         # env = gym.make("Pendulum-v0")
         action_space = env.action_space
         state_space  = env.observation_space
