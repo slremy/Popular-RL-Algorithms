@@ -131,7 +131,7 @@ def plot(rewards):
     plt.clf()
 
 class NormalizedActions(gym.ActionWrapper): # gym env wrapper
-    def _action(self, action):
+    def action(self, action):
         low  = self.action_space.low
         high = self.action_space.high
         
@@ -140,7 +140,7 @@ class NormalizedActions(gym.ActionWrapper): # gym env wrapper
         
         return action
 
-    def _reverse_action(self, action):
+    def reverse_action(self, action):
         low  = self.action_space.low
         high = self.action_space.high
         
