@@ -16,9 +16,9 @@ import torch.nn.functional as F
 from torch.distributions import Normal
 from torch.distributions import Categorical
 from collections import namedtuple
-from common.buffers import *
-from common.value_networks import *
-from common.policy_networks import *
+from common.buffers import ReplayBuffer
+from common.value_networks import QNetwork
+from common.policy_networks import DPG_PolicyNetwork
 
 import matplotlib.pyplot as plt
 from matplotlib import animation
@@ -44,8 +44,10 @@ def parse_args():
     return args
 
 class DDPG():
-    def __init__(self, replay_buffer, state_space, action_space, hidden_dim):
-        self.replay_buffer = replay_buffer
+    def __init__(self, env, replay_buffer_size, hidden_dim, q_lr=8e-4, policy_lr = 8e-4):
+        state_space = env.observation_space 
+        action_space = env.action_space
+        self.replay_buffer = ReplayBuffer(replay_buffer_size)
         self.qnet = QNetwork(state_space, action_space, hidden_dim).to(device)
         self.target_qnet = QNetwork(state_space, action_space, hidden_dim).to(device)
         self.policy_net = DPG_PolicyNetwork(state_space, action_space, hidden_dim).to(device)
@@ -57,8 +59,7 @@ class DDPG():
         for target_param, param in zip(self.target_qnet.parameters(), self.qnet.parameters()):
             target_param.data.copy_(param.data)
         self.q_criterion = nn.MSELoss()
-        q_lr=8e-4
-        policy_lr = 8e-4
+        
         self.update_cnt=0
 
         self.q_optimizer = optim.Adam(self.qnet.parameters(), lr=q_lr)
@@ -162,17 +163,14 @@ if __name__ == '__main__':
     if ENV == 'Pendulum':
         env = NormalizedActions(gym.make("Pendulum-v1"))
         # env = gym.make("Pendulum-v0")
-        action_space = env.action_space
-        state_space  = env.observation_space
     hidden_dim = 64
     explore_steps = 0  # for random exploration
     batch_size = 64
 
     replay_buffer_size=1e6
-    replay_buffer = ReplayBuffer(replay_buffer_size)
     model_path='./model/ddpg'
     torch.autograd.set_detect_anomaly(True)
-    alg = DDPG(replay_buffer, state_space, action_space, hidden_dim)
+    alg = DDPG(env, replay_buffer_size, hidden_dim)
 
     if args.train:
         # alg.load_model(model_path)
@@ -196,13 +194,13 @@ if __name__ == '__main__':
                     action = alg.policy_net.sample_action()
                 next_state, reward, done, truncated, _ = env.step(action)
                 env.render()
-                replay_buffer.push(state, action, reward, next_state, done)
+                alg.replay_buffer.push(state, action, reward, next_state, done)
                 
                 state = next_state
                 episode_reward += reward
                 frame_idx += 1
                 
-                if len(replay_buffer) > batch_size:
+                if len(alg.replay_buffer) > batch_size:
                     q_loss, policy_loss = alg.update(batch_size)
                     q_loss_list.append(q_loss)
                     policy_loss_list.append(policy_loss)
