@@ -194,7 +194,7 @@ if __name__ == '__main__':
                     action = alg.policy_net.get_action(state)
                 else:
                     action = alg.policy_net.sample_action()
-                next_state, reward, done, truncated _ = env.step(action)
+                next_state, reward, done, truncated, _ = env.step(action)
                 env.render()
                 replay_buffer.push(state, action, reward, next_state, done)
                 
