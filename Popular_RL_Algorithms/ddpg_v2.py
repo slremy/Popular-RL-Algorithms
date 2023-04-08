@@ -22,8 +22,6 @@ from common.policy_networks import *
 
 import matplotlib.pyplot as plt
 from matplotlib import animation
-from IPython.display import display
-from reacher import Reacher
 import argparse
 from gym import spaces
 
@@ -160,14 +158,8 @@ if __name__ == '__main__':
     SCREEN_SIZE=1000
     # SPARSE_REWARD=False
     # SCREEN_SHOT=False
-    ENV = ['Pendulum', 'Reacher'][0]
-    if ENV == 'Reacher':
-        env=Reacher(screen_size=SCREEN_SIZE, num_joints=NUM_JOINTS, link_lengths = LINK_LENGTH, \
-        ini_joint_angles=INI_JOING_ANGLES, target_pos = [369,430], render=True)
-        action_space = spaces.Box(low=-1.0, high=1.0, shape=(env.num_actions,), dtype=np.float32)
-        state_space  = spaces.Box(low=-np.inf, high=np.inf, shape=(env.num_observations, ))
-
-    elif ENV == 'Pendulum':
+    ENV = ['Pendulum'][0]
+    if ENV == 'Pendulum':
         env = NormalizedActions(gym.make("Pendulum-v0"))
         # env = gym.make("Pendulum-v0")
         action_space = env.action_space
@@ -203,8 +195,7 @@ if __name__ == '__main__':
                 else:
                     action = alg.policy_net.sample_action()
                 next_state, reward, done, _ = env.step(action)
-                if ENV !='Reacher':
-                    env.render()
+                env.render()
                 replay_buffer.push(state, action, reward, next_state, done)
                 
                 state = next_state
