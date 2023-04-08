@@ -30,11 +30,13 @@ else:
     device = torch.device("cpu")
 print(device)
 
-parser = argparse.ArgumentParser(description='Train or test neural net motor controller.')
-parser.add_argument('--train', dest='train', action='store_true', default=False)
-parser.add_argument('--test', dest='test', action='store_true', default=False)
+def parse_args():
+    parser = argparse.ArgumentParser(description='Train or test neural net motor controller.')
+    parser.add_argument('--train', dest='train', action='store_true', default=False)
+    parser.add_argument('--test', dest='test', action='store_true', default=False)
 
-args = parser.parse_args()
+    args = parser.parse_args()
+    return args
 
 
 class ReplayBuffer:
@@ -370,6 +372,7 @@ model_path = './model/td3'
 td3_trainer=TD3_Trainer(replay_buffer, hidden_dim=hidden_dim, policy_target_update_interval=policy_target_update_interval, action_range=action_range )
 
 if __name__ == '__main__':
+    args = parse_args()
     if args.train:
         # training loop
         for eps in range(max_episodes):
