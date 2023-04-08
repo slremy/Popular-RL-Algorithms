@@ -15,10 +15,6 @@ import torch.optim as optim
 import torch.nn.functional as F
 from torch.distributions import Normal
 
-from IPython.display import clear_output
-import matplotlib.pyplot as plt
-from matplotlib import animation
-from IPython.display import display
 from reacher import Reacher
 
 import argparse
@@ -328,13 +324,6 @@ class TD3_Trainer():
         self.q_net1.eval()
         self.q_net2.eval()
         self.policy_net.eval()
-
-def plot(rewards):
-    clear_output(True)
-    plt.figure(figsize=(20,5))
-    plt.plot(rewards)
-    plt.savefig('td3.png')
-    # plt.show()
 
 
 # choose env
