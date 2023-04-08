@@ -132,8 +132,12 @@ class PolicyNetwork(nn.Module):
 
 
 class SAC_Trainer():
-    def __init__(self, replay_buffer, hidden_dim):
-        self.replay_buffer = replay_buffer
+    def __init__(self, env, hidden_dim, replay_buffer_size=1e6, soft_q_lr=3e-4, policy_lr=3e-4, alpha_lr=3e-4):
+        self.replay_buffer = ReplayBuffer(replay_buffer_size)
+
+        state_dim  = env.observation_space.shape[0]
+        action_dim = env.action_space.n  # discrete
+        self.target_entropy = -1.*action_dim
 
         self.soft_q_net1 = SoftQNetwork(state_dim, action_dim, hidden_dim).to(device)
         self.soft_q_net2 = SoftQNetwork(state_dim, action_dim, hidden_dim).to(device)
@@ -152,17 +156,13 @@ class SAC_Trainer():
         self.soft_q_criterion1 = nn.MSELoss()
         self.soft_q_criterion2 = nn.MSELoss()
 
-        soft_q_lr = 3e-4
-        policy_lr = 3e-4
-        alpha_lr  = 3e-4
-
         self.soft_q_optimizer1 = optim.Adam(self.soft_q_net1.parameters(), lr=soft_q_lr)
         self.soft_q_optimizer2 = optim.Adam(self.soft_q_net2.parameters(), lr=soft_q_lr)
         self.policy_optimizer = optim.Adam(self.policy_net.parameters(), lr=policy_lr)
         self.alpha_optimizer = optim.Adam([self.log_alpha], lr=alpha_lr)
 
     
-    def update(self, batch_size, reward_scale=10., auto_entropy=True, target_entropy=-2, gamma=0.99, soft_tau=1e-2):
+    def update(self, batch_size, reward_scale=10., auto_entropy=True, gamma=0.99, soft_tau=1e-2):
         state, action, reward, next_state, done = self.replay_buffer.sample(batch_size)
         # print('sample:', state, action,  reward, done)
 
@@ -206,7 +206,7 @@ class SAC_Trainer():
         # Updating alpha wrt entropy
         # alpha = 0.0  # trade-off between exploration (max entropy) and exploitation (max Q) 
         if auto_entropy is True:
-            alpha_loss = -(self.log_alpha * (log_prob + target_entropy).detach()).mean()
+            alpha_loss = -(self.log_alpha * (log_prob + self.target_entropy).detach()).mean()
             # print('alpha loss: ',alpha_loss)
             self.alpha_optimizer.zero_grad()
             alpha_loss.backward()
@@ -255,13 +255,9 @@ def plot(rewards):
 
 
 replay_buffer_size = 1e6
-replay_buffer = ReplayBuffer(replay_buffer_size)
 
 # choose env
 env = gym.make('CartPole-v1')
-
-state_dim  = env.observation_space.shape[0]
-action_dim = env.action_space.n  # discrete
 
 # hyper-parameters for RL training
 max_episodes  = 10000
@@ -274,10 +270,9 @@ DETERMINISTIC=False
 hidden_dim = 64
 rewards     = []
 model_path = './model/sac_discrete_v2'
-target_entropy = -1.*action_dim
 # target_entropy = 0.98 * -np.log(1 / action_dim)
 
-sac_trainer=SAC_Trainer(replay_buffer, hidden_dim=hidden_dim)
+sac_trainer=SAC_Trainer(env, hidden_dim=hidden_dim, replay_buffer_size=replay_buffer_size)
 
 if __name__ == '__main__':
     args = parse_args()
@@ -292,16 +287,16 @@ if __name__ == '__main__':
                 next_state, reward, done, _ = env.step(action)
                 # env.render()       
                     
-                replay_buffer.push(state, action, reward, next_state, done)
+                sac_trainer.replay_buffer.push(state, action, reward, next_state, done)
                 
                 state = next_state
                 episode_reward += reward
                 frame_idx += 1
                 
                 
-                if len(replay_buffer) > batch_size:
+                if len(sac_trainer.replay_buffer) > batch_size:
                     for i in range(update_itr):
-                        _=sac_trainer.update(batch_size, reward_scale=1., auto_entropy=AUTO_ENTROPY, target_entropy=target_entropy)
+                        _=sac_trainer.update(batch_size, reward_scale=1., auto_entropy=AUTO_ENTROPY)
 
                 if done:
                     break
