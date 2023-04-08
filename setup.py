@@ -10,6 +10,7 @@ setup(name='Popular_RL_Algorithms',
       author_email='https://github.com/quantumiracle',
       url='https://github.com/quantumiracle/Popular-RL-Algorithms',
       install_requires = ["gym", 
+          "torch",
           ],
       packages=find_packages(),
 )
