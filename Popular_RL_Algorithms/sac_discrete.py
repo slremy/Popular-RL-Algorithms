@@ -253,28 +253,29 @@ def plot(rewards):
     # plt.show()
 
 
-replay_buffer_size = 1e6
-
-# choose env
-env = gym.make('CartPole-v1')
-
-# hyper-parameters for RL training
-max_episodes  = 10000
-max_steps = 200
-frame_idx   = 0
-batch_size  = 256
-update_itr = 1
-AUTO_ENTROPY=True
-DETERMINISTIC=False
-hidden_dim = 64
-rewards     = []
-model_path = './model/sac_discrete_v2'
-# target_entropy = 0.98 * -np.log(1 / action_dim)
-
-sac_trainer=SAC_Trainer(env, hidden_dim=hidden_dim, replay_buffer_size=replay_buffer_size)
-
 if __name__ == '__main__':
     args = parse_args()
+
+    replay_buffer_size = 1e6
+
+    # choose env
+    env = gym.make('CartPole-v1')
+
+    # hyper-parameters for RL training
+    max_episodes  = 100
+    max_steps = 200
+    frame_idx   = 0
+    batch_size  = 256
+    update_itr = 1
+    AUTO_ENTROPY=True
+    DETERMINISTIC=False
+    hidden_dim = 64
+    rewards     = []
+    model_path = './model/sac_discrete_v2'
+    # target_entropy = 0.98 * -np.log(1 / action_dim)
+
+    sac_trainer=SAC_Trainer(env, hidden_dim=hidden_dim, replay_buffer_size=replay_buffer_size)
+
     if args.train:
         # training loop
         for eps in range(max_episodes):
