@@ -131,7 +131,7 @@ def plot(rewards):
     # plt.show()
     plt.clf()
 
-def train(env, model, episodes=10000, steps=100, batch_size=256, frame_idx=0, model_path='./model/ddpg'):
+def train(env, model, episodes=10000, steps=100, explore_steps=0, batch_size=256, frame_idx=0, model_path='./model/ddpg'):
     rewards = []
 
     # training loop
@@ -148,7 +148,7 @@ def train(env, model, episodes=10000, steps=100, batch_size=256, frame_idx=0, mo
             else:
                 action = model.policy_net.sample_action()
             next_state, reward, done, truncated, _ = env.step(action)
-            env.render()
+            
             model.replay_buffer.push(state, action, reward, next_state, done)
             
             state = next_state
@@ -156,7 +156,7 @@ def train(env, model, episodes=10000, steps=100, batch_size=256, frame_idx=0, mo
             frame_idx += 1
             
             if len(model.replay_buffer) > batch_size:
-                q_loss, policy_loss = alg.update(batch_size)
+                q_loss, policy_loss = model.update(batch_size)
                 q_loss_list.append(q_loss)
                 policy_loss_list.append(policy_loss)
             
