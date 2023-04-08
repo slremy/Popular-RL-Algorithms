@@ -131,6 +131,48 @@ def plot(rewards):
     # plt.show()
     plt.clf()
 
+def train(env, model, episodes=10000, steps=100, batch_size=256, frame_idx=0, model_path='./model/ddpg'):
+    rewards = []
+
+    # training loop
+    for eps in range(episodes):
+        q_loss_list=[]
+        policy_loss_list=[]
+        state, _ = env.reset()
+        episode_reward = 0
+        
+        for step in range(steps):
+
+            if frame_idx > explore_steps:
+                action = model.policy_net.get_action(state)
+            else:
+                action = model.policy_net.sample_action()
+            next_state, reward, done, truncated, _ = env.step(action)
+            env.render()
+            model.replay_buffer.push(state, action, reward, next_state, done)
+            
+            state = next_state
+            episode_reward += reward
+            frame_idx += 1
+            
+            if len(model.replay_buffer) > batch_size:
+                q_loss, policy_loss = alg.update(batch_size)
+                q_loss_list.append(q_loss)
+                policy_loss_list.append(policy_loss)
+            
+            if done:
+                break
+
+        if eps % 20 == 0:
+            plot(rewards)
+            model.save_model(model_path)
+        print('Eps: ', eps, '| Reward: ', episode_reward, '| Loss: ', np.average(q_loss_list), np.average(policy_loss_list))
+        
+        rewards.append(episode_reward)
+    model.save_model(model_path)
+
+    return model
+
 class NormalizedActions(gym.ActionWrapper): # gym env wrapper
     def action(self, action):
         low  = self.action_space.low
@@ -174,47 +216,7 @@ if __name__ == '__main__':
 
     if args.train:
         # alg.load_model(model_path)
-
-        # hyper-parameters
-        max_episodes  = 1000
-        max_steps   = 100
-        frame_idx   = 0
-        rewards=[]
-
-        for i_episode in range (max_episodes):
-            q_loss_list=[]
-            policy_loss_list=[]
-            state, _ = env.reset()
-            episode_reward = 0
-
-            for step in range(max_steps):
-                if frame_idx > explore_steps:
-                    action = alg.policy_net.get_action(state)
-                else:
-                    action = alg.policy_net.sample_action()
-                next_state, reward, done, truncated, _ = env.step(action)
-                env.render()
-                alg.replay_buffer.push(state, action, reward, next_state, done)
-                
-                state = next_state
-                episode_reward += reward
-                frame_idx += 1
-                
-                if len(alg.replay_buffer) > batch_size:
-                    q_loss, policy_loss = alg.update(batch_size)
-                    q_loss_list.append(q_loss)
-                    policy_loss_list.append(policy_loss)
-                
-                if done:
-                    break
-
-            if i_episode % 20 == 0:
-                plot(rewards)
-                alg.save_model(model_path)
-            print('Eps: ', i_episode, '| Reward: ', episode_reward, '| Loss: ', np.average(q_loss_list), np.average(policy_loss_list))
-            
-            rewards.append(episode_reward)
-
+        alg = train(env, alg, episodes=1000)
 
     if args.test:
         test_episodes = 10
