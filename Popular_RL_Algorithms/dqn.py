@@ -17,7 +17,7 @@ SAVE_INTERVAL = 20
 TARGET_UPDATE_INTERVAL = 20
 
 BATCH_SIZE = 128
-REPLAY_BUFFER_SIZE = 100000
+REPLAY_BUFFER_SIZE = 1000000
 REPLAY_START_SIZE = 2000
 
 GAMMA = 0.95
@@ -261,7 +261,10 @@ def train(env, model, episodes=MAX_EPI, steps=MAX_STEP, save_interval=SAVE_INTER
             if done:
                 break
             s = s_
-        print('Ep: ', epi, '| Ep_r: ', epi_r, '| Steps: ', step, f'| Ep_Loss: {epi_loss:.4f}', np.array(env.actions).flatten().round(3))
+        if hasattr(env, "actions"):
+            print('Ep: ', epi, '| Ep_r: ', epi_r, '| Steps: ', step, f'| Ep_Loss: {epi_loss:.4f}', np.array(env.actions).flatten().round(3))
+        else:
+            print('Ep: ', epi, '| Ep_r: ', epi_r, '| Steps: ', step, f'| Ep_Loss: {epi_loss:.4f}')
         log.append([epi, epi_r, step])
         # if epi % save_interval == 0:
             # model.save_model()

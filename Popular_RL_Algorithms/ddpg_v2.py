@@ -16,14 +16,12 @@ import torch.nn.functional as F
 from torch.distributions import Normal
 from torch.distributions import Categorical
 from collections import namedtuple
-from common.buffers import *
-from common.value_networks import *
-from common.policy_networks import *
+from common.buffers import ReplayBuffer
+from common.value_networks import QNetwork
+from common.policy_networks import DPG_PolicyNetwork
 
 import matplotlib.pyplot as plt
 from matplotlib import animation
-from IPython.display import display
-from reacher import Reacher
 import argparse
 from gym import spaces
 
@@ -37,15 +35,19 @@ else:
     device = torch.device("cpu")
 print(device)
 
-parser = argparse.ArgumentParser(description='Train or test neural net motor controller.')
-parser.add_argument('--train', dest='train', action='store_true', default=False)
-parser.add_argument('--test', dest='test', action='store_true', default=False)
+def parse_args():
+    parser = argparse.ArgumentParser(description='Train or test neural net motor controller.')
+    parser.add_argument('--train', dest='train', action='store_true', default=False)
+    parser.add_argument('--test', dest='test', action='store_true', default=False)
 
-args = parser.parse_args()
+    args = parser.parse_args()
+    return args
 
 class DDPG():
-    def __init__(self, replay_buffer, state_space, action_space, hidden_dim):
-        self.replay_buffer = replay_buffer
+    def __init__(self, env, replay_buffer_size, hidden_dim, q_lr=8e-4, policy_lr = 8e-4):
+        state_space = env.observation_space 
+        action_space = env.action_space
+        self.replay_buffer = ReplayBuffer(replay_buffer_size)
         self.qnet = QNetwork(state_space, action_space, hidden_dim).to(device)
         self.target_qnet = QNetwork(state_space, action_space, hidden_dim).to(device)
         self.policy_net = DPG_PolicyNetwork(state_space, action_space, hidden_dim).to(device)
@@ -57,8 +59,7 @@ class DDPG():
         for target_param, param in zip(self.target_qnet.parameters(), self.qnet.parameters()):
             target_param.data.copy_(param.data)
         self.q_criterion = nn.MSELoss()
-        q_lr=8e-4
-        policy_lr = 8e-4
+        
         self.update_cnt=0
 
         self.q_optimizer = optim.Adam(self.qnet.parameters(), lr=q_lr)
@@ -130,8 +131,50 @@ def plot(rewards):
     # plt.show()
     plt.clf()
 
+def train(env, model, episodes=10000, steps=100, explore_steps=0, batch_size=256, frame_idx=0, model_path='./model/ddpg'):
+    rewards = []
+
+    # training loop
+    for eps in range(episodes):
+        q_loss_list=[]
+        policy_loss_list=[]
+        state, _ = env.reset()
+        episode_reward = 0
+        
+        for step in range(steps):
+
+            if frame_idx > explore_steps:
+                action = model.policy_net.get_action(state)
+            else:
+                action = model.policy_net.sample_action()
+            next_state, reward, done, truncated, _ = env.step(action)
+            
+            model.replay_buffer.push(state, action, reward, next_state, done)
+            
+            state = next_state
+            episode_reward += reward
+            frame_idx += 1
+            
+            if len(model.replay_buffer) > batch_size:
+                q_loss, policy_loss = model.update(batch_size)
+                q_loss_list.append(q_loss)
+                policy_loss_list.append(policy_loss)
+            
+            if done:
+                break
+
+        if eps % 20 == 0:
+            plot(rewards)
+            model.save_model(model_path)
+        print('Eps: ', eps, '| Reward: ', episode_reward, '| Loss: ', np.average(q_loss_list), np.average(policy_loss_list))
+        
+        rewards.append(episode_reward)
+    model.save_model(model_path)
+
+    return model
+
 class NormalizedActions(gym.ActionWrapper): # gym env wrapper
-    def _action(self, action):
+    def action(self, action):
         low  = self.action_space.low
         high = self.action_space.high
         
@@ -140,7 +183,7 @@ class NormalizedActions(gym.ActionWrapper): # gym env wrapper
         
         return action
 
-    def _reverse_action(self, action):
+    def reverse_action(self, action):
         low  = self.action_space.low
         high = self.action_space.high
         
@@ -151,78 +194,29 @@ class NormalizedActions(gym.ActionWrapper): # gym env wrapper
 
 
 if __name__ == '__main__':
+    args = parse_args()
     NUM_JOINTS=2
     LINK_LENGTH=[200, 140]
     INI_JOING_ANGLES=[0.1, 0.1]
     SCREEN_SIZE=1000
     # SPARSE_REWARD=False
     # SCREEN_SHOT=False
-    ENV = ['Pendulum', 'Reacher'][0]
-    if ENV == 'Reacher':
-        env=Reacher(screen_size=SCREEN_SIZE, num_joints=NUM_JOINTS, link_lengths = LINK_LENGTH, \
-        ini_joint_angles=INI_JOING_ANGLES, target_pos = [369,430], render=True)
-        action_space = spaces.Box(low=-1.0, high=1.0, shape=(env.num_actions,), dtype=np.float32)
-        state_space  = spaces.Box(low=-np.inf, high=np.inf, shape=(env.num_observations, ))
-
-    elif ENV == 'Pendulum':
-        env = NormalizedActions(gym.make("Pendulum-v0"))
+    ENV = ['Pendulum'][0]
+    if ENV == 'Pendulum':
+        env = NormalizedActions(gym.make("Pendulum-v1"))
         # env = gym.make("Pendulum-v0")
-        action_space = env.action_space
-        state_space  = env.observation_space
     hidden_dim = 64
     explore_steps = 0  # for random exploration
     batch_size = 64
 
     replay_buffer_size=1e6
-    replay_buffer = ReplayBuffer(replay_buffer_size)
     model_path='./model/ddpg'
     torch.autograd.set_detect_anomaly(True)
-    alg = DDPG(replay_buffer, state_space, action_space, hidden_dim)
+    alg = DDPG(env, replay_buffer_size, hidden_dim)
 
     if args.train:
         # alg.load_model(model_path)
-
-        # hyper-parameters
-        max_episodes  = 1000
-        max_steps   = 100
-        frame_idx   = 0
-        rewards=[]
-
-        for i_episode in range (max_episodes):
-            q_loss_list=[]
-            policy_loss_list=[]
-            state = env.reset()
-            episode_reward = 0
-
-            for step in range(max_steps):
-                if frame_idx > explore_steps:
-                    action = alg.policy_net.get_action(state)
-                else:
-                    action = alg.policy_net.sample_action()
-                next_state, reward, done, _ = env.step(action)
-                if ENV !='Reacher':
-                    env.render()
-                replay_buffer.push(state, action, reward, next_state, done)
-                
-                state = next_state
-                episode_reward += reward
-                frame_idx += 1
-                
-                if len(replay_buffer) > batch_size:
-                    q_loss, policy_loss = alg.update(batch_size)
-                    q_loss_list.append(q_loss)
-                    policy_loss_list.append(policy_loss)
-                
-                if done:
-                    break
-
-            if i_episode % 20 == 0:
-                plot(rewards)
-                alg.save_model(model_path)
-            print('Eps: ', i_episode, '| Reward: ', episode_reward, '| Loss: ', np.average(q_loss_list), np.average(policy_loss_list))
-            
-            rewards.append(episode_reward)
-
+        alg = train(env, alg, episodes=1000)
 
     if args.test:
         test_episodes = 10
@@ -232,12 +226,12 @@ if __name__ == '__main__':
         for i_episode in range (test_episodes):
             q_loss_list=[]
             policy_loss_list=[]
-            state = env.reset()
+            state, _ = env.reset()
             episode_reward = 0
 
             for step in range(max_steps):
                 action = alg.policy_net.get_action(state, noise_scale=0.0)  # no noise for testing
-                next_state, reward, done, _ = env.step(action)
+                next_state, reward, done, truncated, _ = env.step(action)
                 
                 state = next_state
                 episode_reward += reward

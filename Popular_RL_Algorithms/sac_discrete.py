@@ -17,7 +17,6 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 from torch.distributions import Categorical
-from IPython.display import clear_output
 import matplotlib.pyplot as plt
 import argparse
 
@@ -29,13 +28,13 @@ else:
     device = torch.device("cpu")
 print(device)
 
+def parse_args():
+    parser = argparse.ArgumentParser(description='Train or test neural net motor controller.')
+    parser.add_argument('--train', dest='train', action='store_true', default=False)
+    parser.add_argument('--test', dest='test', action='store_true', default=False)
 
-parser = argparse.ArgumentParser(description='Train or test neural net motor controller.')
-parser.add_argument('--train', dest='train', action='store_true', default=False)
-parser.add_argument('--test', dest='test', action='store_true', default=False)
-
-args = parser.parse_args()
-
+    args = parser.parse_args()
+    return args
 
 class ReplayBuffer:
     def __init__(self, capacity):
@@ -131,9 +130,14 @@ class PolicyNetwork(nn.Module):
         return action
 
 
-class SAC_Trainer():
-    def __init__(self, replay_buffer, hidden_dim):
-        self.replay_buffer = replay_buffer
+class SAC():
+    def __init__(self, env, hidden_dim, replay_buffer_size=1e6, soft_q_lr=3e-4, policy_lr=3e-4, alpha_lr=3e-4):
+        self.replay_buffer = ReplayBuffer(replay_buffer_size)
+
+        state_dim  = env.observation_space.shape[0]
+        action_dim = env.action_space.n  # discrete
+        self.target_entropy = -1.*action_dim
+        # target_entropy = 0.98 * -np.log(1 / action_dim)
 
         self.soft_q_net1 = SoftQNetwork(state_dim, action_dim, hidden_dim).to(device)
         self.soft_q_net2 = SoftQNetwork(state_dim, action_dim, hidden_dim).to(device)
@@ -152,17 +156,13 @@ class SAC_Trainer():
         self.soft_q_criterion1 = nn.MSELoss()
         self.soft_q_criterion2 = nn.MSELoss()
 
-        soft_q_lr = 3e-4
-        policy_lr = 3e-4
-        alpha_lr  = 3e-4
-
         self.soft_q_optimizer1 = optim.Adam(self.soft_q_net1.parameters(), lr=soft_q_lr)
         self.soft_q_optimizer2 = optim.Adam(self.soft_q_net2.parameters(), lr=soft_q_lr)
         self.policy_optimizer = optim.Adam(self.policy_net.parameters(), lr=policy_lr)
         self.alpha_optimizer = optim.Adam([self.log_alpha], lr=alpha_lr)
 
     
-    def update(self, batch_size, reward_scale=10., auto_entropy=True, target_entropy=-2, gamma=0.99, soft_tau=1e-2):
+    def update(self, batch_size, reward_scale=10., auto_entropy=True, gamma=0.99, soft_tau=1e-2):
         state, action, reward, next_state, done = self.replay_buffer.sample(batch_size)
         # print('sample:', state, action,  reward, done)
 
@@ -206,7 +206,7 @@ class SAC_Trainer():
         # Updating alpha wrt entropy
         # alpha = 0.0  # trade-off between exploration (max entropy) and exploitation (max Q) 
         if auto_entropy is True:
-            alpha_loss = -(self.log_alpha * (log_prob + target_entropy).detach()).mean()
+            alpha_loss = -(self.log_alpha * (log_prob + self.target_entropy).detach()).mean()
             # print('alpha loss: ',alpha_loss)
             self.alpha_optimizer.zero_grad()
             alpha_loss.backward()
@@ -247,85 +247,90 @@ class SAC_Trainer():
 
 
 def plot(rewards):
-    clear_output(True)
+    plt.clf()
     plt.figure(figsize=(20,5))
     plt.plot(rewards)
     plt.savefig('sac_v2.png')
     # plt.show()
 
 
-replay_buffer_size = 1e6
-replay_buffer = ReplayBuffer(replay_buffer_size)
+def train(env, model, episodes=10000, steps=100, deterministic=False, batch_size=256, update_itr=1, frame_idx=0, auto_entropy=True, model_path='./model/sac_discrete_v2'):
+    rewards = []
+    # training loop
+    for eps in range(episodes):
+        state, _ =  env.reset()
+        episode_reward = 0
+        
+        for step in range(steps):
+            action = model.policy_net.get_action(state, deterministic=deterministic)
+            next_state, reward, done, truncated, _ = env.step(action)
+            # env.render()       
+                
+            model.replay_buffer.push(state, action, reward, next_state, done)
+            
+            state = next_state
+            episode_reward += reward
+            frame_idx += 1
+            
+            
+            if len(model.replay_buffer) > batch_size:
+                for i in range(update_itr):
+                    _=model.update(batch_size, reward_scale=1., auto_entropy=auto_entropy)
 
-# choose env
-env = gym.make('CartPole-v1')
+            if done:
+                break
 
-state_dim  = env.observation_space.shape[0]
-action_dim = env.action_space.n  # discrete
+        if eps % 20 == 0 and eps>0: # plot and model saving interval
+            plot(rewards)
+            np.save('rewards', rewards)
+            model.save_model(model_path)
+        print('Episode: ', eps, '| Episode Reward: ', episode_reward, '| Episode Length: ', step)
+        rewards.append(episode_reward)
+    model.save_model(model_path)
 
-# hyper-parameters for RL training
-max_episodes  = 10000
-max_steps = 200
-frame_idx   = 0
-batch_size  = 256
-update_itr = 1
-AUTO_ENTROPY=True
-DETERMINISTIC=False
-hidden_dim = 64
-rewards     = []
-model_path = './model/sac_discrete_v2'
-target_entropy = -1.*action_dim
-# target_entropy = 0.98 * -np.log(1 / action_dim)
-
-sac_trainer=SAC_Trainer(replay_buffer, hidden_dim=hidden_dim)
+    return model
 
 if __name__ == '__main__':
+    args = parse_args()
+
+    replay_buffer_size = 1e6
+
+    # choose env
+    env = gym.make('CartPole-v1')
+
+    # hyper-parameters for RL training
+    max_episodes  = 100
+    max_steps = 200
+    frame_idx   = 0
+    batch_size  = 256
+    update_itr = 1
+    AUTO_ENTROPY=True
+    DETERMINISTIC=False
+    hidden_dim = 64
+    rewards     = []
+    model_path = './model/sac_discrete_v2'
+
+    model=SAC(env, hidden_dim=hidden_dim, replay_buffer_size=replay_buffer_size)
+
     if args.train:
-        # training loop
-        for eps in range(max_episodes):
-            state =  env.reset()
-            episode_reward = 0
-            
-            for step in range(max_steps):
-                action = sac_trainer.policy_net.get_action(state, deterministic = DETERMINISTIC)
-                next_state, reward, done, _ = env.step(action)
-                # env.render()       
-                    
-                replay_buffer.push(state, action, reward, next_state, done)
-                
-                state = next_state
-                episode_reward += reward
-                frame_idx += 1
-                
-                
-                if len(replay_buffer) > batch_size:
-                    for i in range(update_itr):
-                        _=sac_trainer.update(batch_size, reward_scale=1., auto_entropy=AUTO_ENTROPY, target_entropy=target_entropy)
-
-                if done:
-                    break
-
-            if eps % 20 == 0 and eps>0: # plot and model saving interval
-                plot(rewards)
-                np.save('rewards', rewards)
-                sac_trainer.save_model(model_path)
-            print('Episode: ', eps, '| Episode Reward: ', episode_reward, '| Episode Length: ', step)
-            rewards.append(episode_reward)
-        sac_trainer.save_model(model_path)
+        model = train(env, model, episodes=max_episodes, steps=max_steps, deterministic=False, auto_entropy=True, model_path='./model/sac_discrete_v2')
+        
 
     if args.test:
-        sac_trainer.load_model(model_path)
+        model.load_model(model_path)
         for eps in range(10):
-            state =  env.reset()
+            state, _ =  env.reset()
             episode_reward = 0
 
             for step in range(max_steps):
-                action = sac_trainer.policy_net.get_action(state, deterministic = DETERMINISTIC)
-                next_state, reward, done, _ = env.step(action)
+                action = model.policy_net.get_action(state, deterministic = DETERMINISTIC)
+                next_state, reward, done, truncated, _ = env.step(action)
                 env.render()   
 
 
                 episode_reward += reward
                 state=next_state
 
+                if done:
+                    break
             print('Episode: ', eps, '| Episode Reward: ', episode_reward)
