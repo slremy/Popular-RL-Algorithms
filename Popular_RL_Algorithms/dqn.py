@@ -46,6 +46,7 @@ class EpsilonScheduler():
         self.epsilon = self.eps_start
         self.ini_frame_idx = 0
         self.current_frame_idx = 0
+        
 
     def reset(self, ):
         """ Reset the scheduler """
@@ -156,6 +157,7 @@ class DQN(object):
         self.updates = 0
         self.gamma = gamma
         self.target_update_interval = target_update_interval
+        self.replay_buffer = replay_buffer(REPLAY_BUFFER_SIZE)
 
     def choose_action(self, x):
         # x = Variable(torch.unsqueeze(torch.FloatTensor(x), 0)).to(device)
@@ -233,7 +235,6 @@ class DQN(object):
         self.target_net.load_state_dict(self.eval_net.state_dict())
     
 def train(env, model, episodes=MAX_EPI, steps=MAX_STEP, save_interval=SAVE_INTERVAL, replay_start_size=REPLAY_START_SIZE, batch_size=BATCH_SIZE):
-    r_buffer = replay_buffer(REPLAY_BUFFER_SIZE)
     log = []
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M")
     # print('\nCollecting experience...')
@@ -249,12 +250,12 @@ def train(env, model, episodes=MAX_EPI, steps=MAX_STEP, save_interval=SAVE_INTER
             a = model.choose_action(s)
             actions.append(a)
             s_, r, done, truncated, info = env.step(a)
-            # r_buffer.add(torch.tensor([s]), torch.tensor([s_]), torch.tensor([[a]]), torch.tensor([[r]], dtype=torch.float), torch.tensor([[done]]))
-            r_buffer.add([s,s_,[a],[r],[done]])
+            # model.replay_buffer.add(torch.tensor([s]), torch.tensor([s_]), torch.tensor([[a]]), torch.tensor([[r]], dtype=torch.float), torch.tensor([[done]]))
+            model.replay_buffer.add([s,s_,[a],[r],[done]])
             model.epsilon_scheduler.step(total_step)
             epi_r += r
-            if total_step > replay_start_size and len(r_buffer.buffer) >= batch_size:
-                sample = r_buffer.sample(batch_size)
+            if total_step > replay_start_size and len(model.replay_buffer.buffer) >= batch_size:
+                sample = model.replay_buffer.sample(batch_size)
                 loss = model.learn(sample)
                 epi_loss += loss
             if done:
