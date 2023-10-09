@@ -15,8 +15,6 @@ import torch.optim as optim
 import torch.nn.functional as F
 from torch.distributions import Normal
 
-from reacher import Reacher
-
 import argparse
 import time
 
@@ -66,7 +64,7 @@ class ReplayBuffer:
         return len(self.buffer)
 
 class NormalizedActions(gym.ActionWrapper):
-    def _action(self, action):
+    def action(self, action):
         low  = self.action_space.low
         high = self.action_space.high
         
@@ -75,7 +73,7 @@ class NormalizedActions(gym.ActionWrapper):
         
         return action
 
-    def _reverse_action(self, action):
+    def reverse_action(self, action):
         low  = self.action_space.low
         high = self.action_space.high
         
@@ -205,23 +203,27 @@ class PolicyNetwork(nn.Module):
         z      = normal.sample().to(device)
         
         action = mean.detach().cpu().numpy()[0] if deterministic else torch.tanh(mean + std*z).detach().cpu().numpy()[0]
-
-        ''' add noise '''
+        print(action)
+        # ''' add noise '''
         noise = normal.sample(action.shape) * explore_noise_scale
         action = self.action_range*action + noise.numpy()
-
+        print(action)
         return action
 
 
     def sample_action(self,):
         a=torch.FloatTensor(self.num_actions).uniform_(-1, 1)
-        return self.action_range*a.numpy()
+        return self.action_range*a.numpy()/2
 
 
-class TD3_Trainer():
-    def __init__(self, replay_buffer_size, hidden_dim, action_range, policy_target_update_interval=1):
+class TD3():
+    def __init__(self, env, replay_buffer_size, hidden_dim, policy_target_update_interval=1, q_lr=3e-4, policy_lr=3e-4):
         self.replay_buffer = ReplayBuffer(replay_buffer_size)
-
+        self.env = env
+        action_dim = self.env.action_space.shape[0]
+        state_dim  = self.env.observation_space.shape[0]
+        action_range = (self.env.action_space.high - self.env.action_space.low)[0] #assume homogeneous action_range
+        # action_range = 1.
 
         self.q_net1 = QNetwork(state_dim, action_dim, hidden_dim).to(device)
         self.q_net2 = QNetwork(state_dim, action_dim, hidden_dim).to(device)
@@ -236,9 +238,6 @@ class TD3_Trainer():
         self.target_q_net2 = self.target_ini(self.q_net2, self.target_q_net2)
         self.target_policy_net = self.target_ini(self.policy_net, self.target_policy_net)
         
-
-        q_lr = 3e-4
-        policy_lr = 3e-4
         self.update_cnt = 0
         self.policy_target_update_interval = policy_target_update_interval
 
@@ -328,109 +327,109 @@ class TD3_Trainer():
         self.policy_net.eval()
 
 
-# choose env
-ENV = ['Reacher', 'Pendulum-v0', 'HalfCheetah-v2'][1]
-if ENV == 'Reacher':
-    NUM_JOINTS=2
-    LINK_LENGTH=[200, 140]
-    INI_JOING_ANGLES=[0.1, 0.1]
-    SCREEN_SIZE=1000
-    SPARSE_REWARD=False
-    SCREEN_SHOT=False
-    action_range = 10.0
-
-    env=Reacher(screen_size=SCREEN_SIZE, num_joints=NUM_JOINTS, link_lengths = LINK_LENGTH, \
-    ini_joint_angles=INI_JOING_ANGLES, target_pos = [369,430], render=True, change_goal=False)
-    action_dim = env.num_actions
-    state_dim  = env.num_observations
-else:
-    env = NormalizedActions(gym.make(ENV))
-    action_dim = env.action_space.shape[0]
-    state_dim  = env.observation_space.shape[0]
-    action_range=1.
-
-replay_buffer_size = 5e5
-
-# hyper-parameters for RL training
-max_episodes  = 1000
-max_steps   = 20 if ENV ==  'Reacher' else 150  # Pendulum needs 150 steps per episode to learn well, cannot handle 20
-frame_idx   = 0
-batch_size  = 300
-explore_steps = 0  # for random action sampling in the beginning of training
-update_itr = 1
-hidden_dim = 512
-policy_target_update_interval = 3 # delayed update for the policy network and target networks
-DETERMINISTIC=True  # DDPG: deterministic policy gradient
-explore_noise_scale = 0.5  # 0.5 noise is required for Pendulum-v0, 0.1 noise for HalfCheetah-v2
-eval_noise_scale = 0.5
-reward_scale = 1.
-rewards     = []
-model_path = './model/td3'
-
-td3_trainer=TD3_Trainer(replay_buffer_size, hidden_dim=hidden_dim, policy_target_update_interval=policy_target_update_interval, action_range=action_range )
-
-if __name__ == '__main__':
-    args = parse_args()
-    if args.train:
-        # training loop
-        for eps in range(max_episodes):
-            if ENV == 'Reacher':
-                state = env.reset(SCREEN_SHOT)
-            else:
-                state =  env.reset()
-            episode_reward = 0
-            
-            for step in range(max_steps):
-                if frame_idx > explore_steps:
-                    action = td3_trainer.policy_net.get_action(state, deterministic = DETERMINISTIC, explore_noise_scale=explore_noise_scale)
-                else:
-                    action = td3_trainer.policy_net.sample_action()
-                if ENV ==  'Reacher':
-                    next_state, reward, done, _ = env.step(action, SPARSE_REWARD, SCREEN_SHOT)
-                else:
-                    next_state, reward, done, _ = env.step(action) 
-                    # env.render()
-
-                td3_trainer.replay_buffer.push(state, action, reward, next_state, done)
-                
-                state = next_state
-                episode_reward += reward
-                frame_idx += 1
-                
-                if len(td3_trainer.replay_buffer) > batch_size:
-                    for i in range(update_itr):
-                        _=td3_trainer.update(batch_size, deterministic=DETERMINISTIC, eval_noise_scale=eval_noise_scale, reward_scale=reward_scale)
-                
-                if done:
-                    break
-              
-            if eps % 20 == 0 and eps>0:
-                np.save('rewards_td3', rewards)
-                td3_trainer.save_model(model_path)
-
-            print('Episode: ', eps, '| Episode Reward: ', episode_reward)
-            rewards.append(episode_reward)
-        td3_trainer.save_model(model_path)
+def train(env, model, episodes=2000, steps=20, update_itr=1, batch_size=300, frame_idx=0, deterministic=True, explore_steps = 0, explore_noise_scale=0.5, eval_noise_scale=0.5, model_path = './model/td3'):
+    for eps in range(episodes):
+        state, _ =  env.reset()
+        episode_reward = 0
+        rewards = []
+        reward_scale = 10.
         
-    if args.test:
-        td3_trainer.load_model(model_path)
-        for eps in range(10):
-            if ENV == 'Reacher':
-                state = env.reset(SCREEN_SHOT)
+        for step in range(steps):
+            if frame_idx > explore_steps:
+                action = model.policy_net.get_action(state, deterministic=deterministic, explore_noise_scale=explore_noise_scale)
+                action = np.clip(action, env.action_space.high, env.action_space.low)
             else:
-                state =  env.reset()
-                env.render()   
-            episode_reward = 0
+                action = model.policy_net.sample_action()
+            
+            next_state, reward, done, truncated, _ = env.step(action) 
 
-            for step in range(max_steps):
-                action = td3_trainer.policy_net.get_action(state, deterministic = DETERMINISTIC, explore_noise_scale=0.0)
-                if ENV ==  'Reacher':
-                    next_state, reward, done, _ = env.step(action, SPARSE_REWARD, SCREEN_SHOT)
-                else:
-                    next_state, reward, done, _ = env.step(action)
-                    env.render() 
+            model.replay_buffer.push(state, action, reward, next_state, done)            
+            state = next_state
+            episode_reward += reward
+            frame_idx += 1
+            
+            if len(model.replay_buffer) > batch_size:
+                for i in range(update_itr):
+                    _=model.update(batch_size, deterministic=deterministic, eval_noise_scale=eval_noise_scale, reward_scale=reward_scale)
+            
+            if done:
+                break
+            
+        if eps % 20 == 0 and eps>0:
+            np.save('rewards_td3', rewards)
+            model.save_model(model_path)
 
-                episode_reward += reward
-                state=next_state
+        print('Episode: ', eps, '| Episode Reward: ', episode_reward)
+        rewards.append(episode_reward)
+    return model
 
-            print('Episode: ', eps, '| Episode Reward: ', episode_reward)
+# # choose env
+# ENV = ['Reacher', 'Pendulum-v0', 'HalfCheetah-v2'][1]
+# if ENV == 'Reacher':
+#     NUM_JOINTS=2
+#     LINK_LENGTH=[200, 140]
+#     INI_JOING_ANGLES=[0.1, 0.1]
+#     SCREEN_SIZE=1000
+#     SPARSE_REWARD=False
+#     SCREEN_SHOT=False
+#     action_range = 10.0
+
+#     env=Reacher(screen_size=SCREEN_SIZE, num_joints=NUM_JOINTS, link_lengths = LINK_LENGTH, \
+#     ini_joint_angles=INI_JOING_ANGLES, target_pos = [369,430], render=True, change_goal=False)
+#     action_dim = env.num_actions
+#     state_dim  = env.num_observations
+# else:
+#     env = NormalizedActions(gym.make(ENV))
+#     # action_dim = env.action_space.shape[0]
+#     # state_dim  = env.observation_space.shape[0]
+#     # action_range=1.
+
+# replay_buffer_size = 5e5
+
+# # hyper-parameters for RL training
+# # max_episodes  = 1000
+# # max_steps   = 20 if ENV ==  'Reacher' else 150  # Pendulum needs 150 steps per episode to learn well, cannot handle 20
+# # frame_idx   = 0
+# # batch_size  = 300
+# # explore_steps = 0  # for random action sampling in the beginning of training
+# # update_itr = 1
+
+# # hidden_dim = 512
+# policy_target_update_interval = 3 # delayed update for the policy network and target networks
+# DETERMINISTIC=True  # DDPG: deterministic policy gradient
+# explore_noise_scale = 0.5  # 0.5 noise is required for Pendulum-v0, 0.1 noise for HalfCheetah-v2
+# eval_noise_scale = 0.5
+# reward_scale = 1.
+# rewards     = []
+# model_path = './model/td3'
+
+# td3_trainer=TD3(env)
+
+# if __name__ == '__main__':
+#     args = parse_args()
+#     if args.train:
+#         td3_trainer = train(td3_trainer)
+#         td3_trainer.save_model(model_path)
+        
+#     if args.test:
+#         td3_trainer.load_model(model_path)
+#         for eps in range(10):
+#             if ENV == 'Reacher':
+#                 state = env.reset(SCREEN_SHOT)
+#             else:
+#                 state =  env.reset()
+#                 env.render()   
+#             episode_reward = 0
+
+#             for step in range(20):
+#                 action = td3_trainer.policy_net.get_action(state, deterministic = DETERMINISTIC, explore_noise_scale=0.0)
+#                 if ENV ==  'Reacher':
+#                     next_state, reward, done, _ = env.step(action, SPARSE_REWARD, SCREEN_SHOT)
+#                 else:
+#                     next_state, reward, done, _ = env.step(action)
+#                     env.render() 
+
+#                 episode_reward += reward
+#                 state=next_state
+
+#             print('Episode: ', eps, '| Episode Reward: ', episode_reward)
